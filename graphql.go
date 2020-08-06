@@ -28,7 +28,7 @@
 // To specify your own http.Client, use the WithHTTPClient option:
 //  httpclient := &http.Client{}
 //  client := graphql.NewClient("https://machinebox.io/graphql", graphql.WithHTTPClient(httpclient))
-package graphql
+package shopify_graphql
 
 import (
 	"bytes"
@@ -81,14 +81,14 @@ func (c *Client) logf(format string, args ...interface{}) {
 // Pass in a nil response object to skip response parsing.
 // If the request fails or the server returns an error, the first error
 // will be returned.
-func (c *Client) Run(ctx context.Context, req *Request, resp interface{}) error {
+func (c *Client) Run(ctx context.Context, req *Request, resp interface{}) (error, *Cost) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return ctx.Err(), nil
 	default:
 	}
 	if len(req.files) > 0 && !c.useMultipartForm {
-		return errors.New("cannot send files with PostFields option")
+		return errors.New("cannot send files with PostFields option"), nil
 	}
 	if c.useMultipartForm {
 		return c.runWithPostFields(ctx, req, resp)
@@ -96,7 +96,7 @@ func (c *Client) Run(ctx context.Context, req *Request, resp interface{}) error 
 	return c.runWithJSON(ctx, req, resp)
 }
 
-func (c *Client) runWithJSON(ctx context.Context, req *Request, resp interface{}) error {
+func (c *Client) runWithJSON(ctx context.Context, req *Request, resp interface{}) (error, *Cost) {
 	var requestBody bytes.Buffer
 	requestBodyObj := struct {
 		Query     string                 `json:"query"`
@@ -106,7 +106,7 @@ func (c *Client) runWithJSON(ctx context.Context, req *Request, resp interface{}
 		Variables: req.vars,
 	}
 	if err := json.NewEncoder(&requestBody).Encode(requestBodyObj); err != nil {
-		return errors.Wrap(err, "encode body")
+		return errors.Wrap(err, "encode body"), nil
 	}
 	c.logf(">> variables: %v", req.vars)
 	c.logf(">> query: %s", req.q)
@@ -115,7 +115,7 @@ func (c *Client) runWithJSON(ctx context.Context, req *Request, resp interface{}
 	}
 	r, err := http.NewRequest(http.MethodPost, c.endpoint, &requestBody)
 	if err != nil {
-		return err
+		return err, nil
 	}
 	r.Close = c.closeReq
 	r.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -129,54 +129,55 @@ func (c *Client) runWithJSON(ctx context.Context, req *Request, resp interface{}
 	r = r.WithContext(ctx)
 	res, err := c.httpClient.Do(r)
 	if err != nil {
-		return err
+		return err, nil
 	}
 	defer res.Body.Close()
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, res.Body); err != nil {
-		return errors.Wrap(err, "reading body")
+		return errors.Wrap(err, "reading body"), nil
 	}
 	c.logf("<< %s", buf.String())
+	//fmt.Println(buf.String())
 	if err := json.NewDecoder(&buf).Decode(&gr); err != nil {
 		if res.StatusCode != http.StatusOK {
-			return fmt.Errorf("graphql: server returned a non-200 status code: %v", res.StatusCode)
+			return fmt.Errorf("graphql: server returned a non-200 status code: %v", res.StatusCode), nil
 		}
-		return errors.Wrap(err, "decoding response")
+		return errors.Wrap(err, "decoding response"), nil
 	}
 	if len(gr.Errors) > 0 {
 		// return first error
-		return gr.Errors[0]
+		return gr.Errors[0], nil
 	}
-	return nil
+	return nil, &gr.Extensions.Cost
 }
 
-func (c *Client) runWithPostFields(ctx context.Context, req *Request, resp interface{}) error {
+func (c *Client) runWithPostFields(ctx context.Context, req *Request, resp interface{}) (error, *Cost) {
 	var requestBody bytes.Buffer
 	writer := multipart.NewWriter(&requestBody)
 	if err := writer.WriteField("query", req.q); err != nil {
-		return errors.Wrap(err, "write query field")
+		return errors.Wrap(err, "write query field"), nil
 	}
 	var variablesBuf bytes.Buffer
 	if len(req.vars) > 0 {
 		variablesField, err := writer.CreateFormField("variables")
 		if err != nil {
-			return errors.Wrap(err, "create variables field")
+			return errors.Wrap(err, "create variables field"), nil
 		}
 		if err := json.NewEncoder(io.MultiWriter(variablesField, &variablesBuf)).Encode(req.vars); err != nil {
-			return errors.Wrap(err, "encode variables")
+			return errors.Wrap(err, "encode variables"), nil
 		}
 	}
 	for i := range req.files {
 		part, err := writer.CreateFormFile(req.files[i].Field, req.files[i].Name)
 		if err != nil {
-			return errors.Wrap(err, "create form file")
+			return errors.Wrap(err, "create form file"), nil
 		}
 		if _, err := io.Copy(part, req.files[i].R); err != nil {
-			return errors.Wrap(err, "preparing file")
+			return errors.Wrap(err, "preparing file"), nil
 		}
 	}
 	if err := writer.Close(); err != nil {
-		return errors.Wrap(err, "close writer")
+		return errors.Wrap(err, "close writer"), nil
 	}
 	c.logf(">> variables: %s", variablesBuf.String())
 	c.logf(">> files: %d", len(req.files))
@@ -186,7 +187,7 @@ func (c *Client) runWithPostFields(ctx context.Context, req *Request, resp inter
 	}
 	r, err := http.NewRequest(http.MethodPost, c.endpoint, &requestBody)
 	if err != nil {
-		return err
+		return err, nil
 	}
 	r.Close = c.closeReq
 	r.Header.Set("Content-Type", writer.FormDataContentType())
@@ -200,25 +201,25 @@ func (c *Client) runWithPostFields(ctx context.Context, req *Request, resp inter
 	r = r.WithContext(ctx)
 	res, err := c.httpClient.Do(r)
 	if err != nil {
-		return err
+		return err, nil
 	}
 	defer res.Body.Close()
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, res.Body); err != nil {
-		return errors.Wrap(err, "reading body")
+		return errors.Wrap(err, "reading body"), nil
 	}
 	c.logf("<< %s", buf.String())
 	if err := json.NewDecoder(&buf).Decode(&gr); err != nil {
 		if res.StatusCode != http.StatusOK {
-			return fmt.Errorf("graphql: server returned a non-200 status code: %v", res.StatusCode)
+			return fmt.Errorf("graphql: server returned a non-200 status code: %v", res.StatusCode), nil
 		}
-		return errors.Wrap(err, "decoding response")
+		return errors.Wrap(err, "decoding response"), nil
 	}
 	if len(gr.Errors) > 0 {
 		// return first error
-		return gr.Errors[0]
+		return gr.Errors[0], nil
 	}
-	return nil
+	return nil, &gr.Extensions.Cost
 }
 
 // WithHTTPClient specifies the underlying http.Client to use when
@@ -258,8 +259,21 @@ func (e graphErr) Error() string {
 }
 
 type graphResponse struct {
-	Data   interface{}
-	Errors []graphErr
+	Data       interface{} `json:"data"`
+	Errors     []graphErr
+	Extensions struct {
+		Cost Cost `json:"cost"`
+	} `json:"extensions"`
+}
+
+type Cost struct {
+	RequestedQueryCost int `json:"requestedQueryCost"`
+	ActualQueryCost    int `json:"actualQueryCost"`
+	ThrottleStatus     struct {
+		MaximumAvailable   float64 `json:"maximumAvailable"`
+		CurrentlyAvailable int     `json:"currentlyAvailable"`
+		RestoreRate        float64 `json:"restoreRate"`
+	} `json:"throttleStatus"`
 }
 
 // Request is a GraphQL request.
