@@ -1,6 +1,6 @@
 # graphql [![GoDoc](https://godoc.org/github.com/machinebox/graphql?status.png)](http://godoc.org/github.com/machinebox/graphql) [![Build Status](https://travis-ci.org/machinebox/graphql.svg?branch=master)](https://travis-ci.org/machinebox/graphql) [![Go Report Card](https://goreportcard.com/badge/github.com/machinebox/graphql)](https://goreportcard.com/report/github.com/machinebox/graphql)
 
-Low-level GraphQL client for Go.
+Low-level Shopify GraphQL client for Go.
 
 * Simple, familiar API
 * Respects `context.Context` timeouts and cancellation
@@ -8,12 +8,13 @@ Low-level GraphQL client for Go.
 * Use strong Go types for response data
 * Use variables and upload files
 * Simple error handling
+* Returns Shopify cost information
 
 ## Installation
 Make sure you have a working Go environment. To install graphql, simply run:
 
 ```
-$ go get github.com/machinebox/graphql
+$ go get github.com/yuval08/shopify_graphql
 ```
 
 ## Usage
@@ -22,7 +23,7 @@ $ go get github.com/machinebox/graphql
 import "context"
 
 // create a client (safe to share across requests)
-client := graphql.NewClient("https://machinebox.io/graphql")
+client := graphql.NewClient("https://test-store.myshopify.com/admin/api/2020-07/graphql.json")
 
 // make a request
 req := graphql.NewRequest(`
@@ -64,4 +65,4 @@ For more information, [read the godoc package documentation](http://godoc.org/gi
 
 ## Thanks
 
-Thanks to [Chris Broadfoot](https://github.com/broady) for design help.
+Thanks to [Machine Box](https://github.com/machinebox/graphql) for th eoriginal code.
